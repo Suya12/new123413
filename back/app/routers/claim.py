@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from app.models.claim import Claim
+from app.models.claim import Claim, ExternalCallbackResponse
 from app.services import claim as claim_service
 
 router = APIRouter(prefix="/api/claims", tags=["Claims"])
@@ -18,7 +18,9 @@ async def confirm_claim(claim_id: int):
     # 확정 전 청구 정보 조회해서 로그 출력
     claim = claim_service.get_claim_by_id(claim_id)
     if claim:
-        print(f"✅ [확정 요청] id={claim.id}, 이름={claim.name}, 주민번호={claim.ssn}, 연락처={claim.phone}, 보험사={claim.company}, 유형={claim.type}")
+        print(f"✅ [확정 요청] id={claim.id}, client_request_id={claim.client_request_id}")
+        print(f"   피보험자: {claim.insured_name}, 주민번호={claim.insured_ssn}, 연락처={claim.insured_contact}")
+        print(f"   보험사: {claim.insured_insurance_company}")
 
     success = claim_service.confirm_claim(claim_id)
     if not success:
@@ -35,3 +37,16 @@ async def get_claim(claim_id: int) -> Claim:
     if claim is None:
         raise HTTPException(status_code=404, detail="Claim not found")
     return claim
+
+
+@router.post("/callback")
+async def receive_external_callback(callback_data: ExternalCallbackResponse):
+    """외부 서버로부터 콜백 응답 수신"""
+    print(f"📩 [콜백 수신] client_request_id={callback_data.client_request_id}, status={callback_data.status}")
+
+    # 외부 응답을 내부 Claim 모델로 변환
+    claim = claim_service.process_external_callback(callback_data)
+
+    print(f"✅ [청구 저장 완료] id={claim.id}, 피보험자={claim.insured_name}")
+
+    return {"ok": True, "claim_id": claim.id}
